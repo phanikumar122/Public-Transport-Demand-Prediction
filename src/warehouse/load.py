@@ -7,6 +7,7 @@ Populates:
   - dim_transport_mode
   - dim_location
   - fact_transport  (from APSRTC, Flights, Railways)
+  - fact_predictions (from batch ML predictions)
 
 Usage:
     python -m src.warehouse.load
@@ -54,7 +55,17 @@ def create_schema(engine):
         return
 
     sql_content = schema_path.read_text(encoding="utf-8")
-    statements = [s.strip() for s in sql_content.split(";") if s.strip() and not s.strip().startswith("--")]
+    
+    # Strip comment lines before splitting into SQL statements
+    clean_lines = []
+    for line in sql_content.splitlines():
+        trimmed = line.strip()
+        if trimmed.startswith("--") or not trimmed:
+            continue
+        clean_lines.append(line)
+
+    clean_sql = "\n".join(clean_lines)
+    statements = [s.strip() for s in clean_sql.split(";") if s.strip()]
 
     with engine.connect() as conn:
         for stmt in statements:
@@ -62,7 +73,8 @@ def create_schema(engine):
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception as e:
-                if "already exists" not in str(e).lower():
+                err_msg = str(e).lower()
+                if "already exists" not in err_msg and "table" not in err_msg:
                     logger.warning("Schema stmt warning: %s", e)
     logger.info("Schema applied successfully.")
 
@@ -116,7 +128,7 @@ def load_dim_date(engine):
 
 # --- DIM_ROUTE ----------------------------------------------------------------
 
-def load_dim_route(engine, apsrtc_df: pd.DataFrame, flights_df: pd.DataFrame):
+def load_dim_route(engine, apsrtc_df: pd.DataFrame, flights_df: pd.DataFrame, rail_df: pd.DataFrame = None):
     routes = set()
 
     if apsrtc_df is not None and "route" in apsrtc_df.columns:
@@ -126,6 +138,13 @@ def load_dim_route(engine, apsrtc_df: pd.DataFrame, flights_df: pd.DataFrame):
         for _, row in flights_df.iterrows():
             src = str(row.get("source", "")).strip()
             dst = str(row.get("destination", "")).strip()
+            if src and dst:
+                routes.add(f"{src}-{dst}")
+
+    if rail_df is not None:
+        for _, row in rail_df.iterrows():
+            src = str(row.get("source_station", "")).strip()
+            dst = str(row.get("destination_station", "")).strip()
             if src and dst:
                 routes.add(f"{src}-{dst}")
 
@@ -229,11 +248,15 @@ def load_fact_apsrtc(engine, df: pd.DataFrame):
     mode_keys  = _get_mode_keys(engine)
     loc_keys   = _get_location_keys(engine)
 
+    def_rk = next(iter(route_keys.values())) if route_keys else 1
+    def_mk = next(iter(mode_keys.values())) if mode_keys else 1
+    def_lk = next(iter(loc_keys.values())) if loc_keys else 1
+
     records = []
     for _, row in df.iterrows():
-        rk = route_keys.get(str(row.get("route", "")), 1)
-        mk = mode_keys.get(("Bus", str(row.get("bus_type", "")), "APSRTC"), 1)
-        lk = loc_keys.get((str(row.get("depot", "")), "Depot"), 1)
+        rk = route_keys.get(str(row.get("route", "")), def_rk)
+        mk = mode_keys.get(("Bus", str(row.get("bus_type", "")), "APSRTC"), def_mk)
+        lk = loc_keys.get((str(row.get("depot", "")), "Depot"), def_lk)
 
         records.append({
             "date_key":          _date_key(row.get("date")),
@@ -262,14 +285,18 @@ def load_fact_flights(engine, df: pd.DataFrame):
     mode_keys  = _get_mode_keys(engine)
     loc_keys   = _get_location_keys(engine)
 
+    def_rk = next(iter(route_keys.values())) if route_keys else 1
+    def_mk = next(iter(mode_keys.values())) if mode_keys else 1
+    def_lk = next(iter(loc_keys.values())) if loc_keys else 1
+
     records = []
     for _, row in df.iterrows():
         src_dst = f"{row.get('source','')}-{row.get('destination','')}"
-        rk = route_keys.get(src_dst, 1)
+        rk = route_keys.get(src_dst, def_rk)
         airline = str(row.get("airline", "Unknown"))
-        mk = mode_keys.get(("Flight", "Economy", airline), 1)
+        mk = mode_keys.get(("Flight", "Economy", airline), def_mk)
         src = str(row.get("source", ""))
-        lk = loc_keys.get((src, "Airport"), 1)
+        lk = loc_keys.get((src, "Airport"), def_lk)
 
         records.append({
             "date_key":          _date_key(row.get("date_of_journey")),
@@ -292,6 +319,9 @@ def load_fact_railways(engine, df: pd.DataFrame):
     route_keys = _get_route_keys(engine)
     loc_keys   = _get_location_keys(engine)
 
+    def_rk = next(iter(route_keys.values())) if route_keys else 1
+    def_lk = next(iter(loc_keys.values())) if loc_keys else 1
+
     with engine.connect() as conn:
         mk_row = conn.execute(text("SELECT mode_key FROM dim_transport_mode WHERE mode_name='Railway' LIMIT 1")).fetchone()
     mk = mk_row[0] if mk_row else 1
@@ -301,8 +331,8 @@ def load_fact_railways(engine, df: pd.DataFrame):
         src = str(row.get("source_station",""))
         dst = str(row.get("destination_station",""))
         route_name = f"{src}-{dst}"
-        rk = route_keys.get(route_name, 1)
-        lk = loc_keys.get((src, "Station"), 1)
+        rk = route_keys.get(route_name, def_rk)
+        lk = loc_keys.get((src, "Station"), def_lk)
 
         records.append({
             "date_key":           20240101,   # schedule data -- no specific date
@@ -341,9 +371,12 @@ def run():
 
     # -- Clear existing data (for re-runs) -------------------------------------
     with engine.connect() as conn:
-        for t in ["fact_transport", "dim_route", "dim_transport_mode", "dim_location", "dim_date"]:
-            conn.execute(text(f"DELETE FROM {t}"))
-            conn.commit()
+        for t in ["fact_predictions", "fact_transport", "dim_route", "dim_transport_mode", "dim_location", "dim_date"]:
+            try:
+                conn.execute(text(f"DELETE FROM {t}"))
+                conn.commit()
+            except Exception:
+                pass
     logger.info("Existing dimension/fact data cleared.")
 
     # Load dims
@@ -351,7 +384,7 @@ def run():
     load_dim_date(engine)
 
     logger.info("[2/5] Loading dim_route...")
-    load_dim_route(engine, apsrtc_df, flights_df)
+    load_dim_route(engine, apsrtc_df, flights_df, rail_df)
 
     logger.info("[3/5] Loading dim_transport_mode...")
     load_dim_transport_mode(engine, apsrtc_df, flights_df)
@@ -367,6 +400,17 @@ def run():
         load_fact_flights(engine, flights_df)
     if rail_df is not None:
         load_fact_railways(engine, rail_df)
+
+    # Load predictions if available
+    pred_path = Path(__file__).resolve().parent.parent.parent / "outputs" / "predictions" / "demand_predictions.csv"
+    if pred_path.exists():
+        try:
+            from src.ml.predict import load_predictions_to_db
+            pred_df = pd.read_csv(pred_path)
+            load_predictions_to_db(pred_df)
+            logger.info("Synchronized fact_predictions table with current dimension keys.")
+        except Exception as e:
+            logger.warning("Could not sync predictions to DB: %s", e)
 
     logger.info("=== Warehouse Load END ===")
 

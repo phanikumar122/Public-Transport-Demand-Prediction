@@ -28,7 +28,7 @@
     "depot_encoded"
   ],
   "n_features": 25,
-  "training_date": "2026-08-29T10:05:59.985108",
+  "training_date": "2026-08-29T11:00:16.685921",
   "dataset": "APSRTC_Transport_Data.csv",
   "target": "passengers",
   "split_strategy": "time-aware chronological (train=70%/val=15%/test=15%)",

@@ -97,14 +97,17 @@ def run_predict():
 
 
 STEP_RUNNERS = {
-    "etl":      run_etl,
-    "load_dw":  run_load_dw,
-    "mine":     run_mining,
-    "train":    run_training,
-    "tune":     run_tuning,
-    "explain":  run_explain,
-    "predict":  run_predict,
+    "etl":       run_etl,
+    "load_dw":   run_load_dw,
+    "warehouse": run_load_dw,
+    "dw":        run_load_dw,
+    "mine":      run_mining,
+    "train":     run_training,
+    "tune":      run_tuning,
+    "explain":   run_explain,
+    "predict":   run_predict,
 }
+VALID_STEPS = list(STEP_RUNNERS.keys())
 
 
 def main():

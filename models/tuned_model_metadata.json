@@ -37,7 +37,7 @@
     "bus_type_encoded",
     "depot_encoded"
   ],
-  "training_date": "2026-08-29T10:08:13.925859",
+  "training_date": "2026-08-29T11:02:32.292813",
   "metrics": {
     "model_name": "XGBoost (Tuned)",
     "split": "test",

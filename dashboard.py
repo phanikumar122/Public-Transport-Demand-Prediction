@@ -493,7 +493,7 @@ elif page == "📊 Model Results":
                     img = load_img(pf)
                     if img:
                         name = pf.stem.replace("predictions_", "").replace("_", " ").title()
-                        st.image(img, caption=name, use_column_width=True)
+                        st.image(img, caption=name, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -750,13 +750,13 @@ elif page == "🧠 SHAP Analysis":
         img = load_img(FIGURES / "shap_global_importance.png")
         if img:
             st.markdown('<div class="section-title">Global SHAP Bar Chart</div>', unsafe_allow_html=True)
-            st.image(img, use_column_width=True)
+            st.image(img, use_container_width=True)
 
     with col2:
         img2 = load_img(FIGURES / "shap_summary_plot.png")
         if img2:
             st.markdown('<div class="section-title">SHAP Beeswarm Summary</div>', unsafe_allow_html=True)
-            st.image(img2, use_column_width=True)
+            st.image(img2, use_container_width=True)
 
     img3 = load_img(FIGURES / "shap_waterfall_single.png")
     if img3:
