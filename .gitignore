@@ -1,0 +1,95 @@
+# ==========================================
+# Byte-compiled / optimized / DLL files
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+
+# ==========================================
+# Virtual Environments
+# ==========================================
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ==========================================
+# Machine Learning & Model Artifacts
+# ==========================================
+catboost_info/
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+models/*.pkl
+models/*.joblib
+
+# ==========================================
+# Datasets & Large Files
+# ==========================================
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*.csv
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ==========================================
+# Outputs & Predictions
+# ==========================================
+outputs/predictions/*.csv
+outputs/metrics/*.csv
+reports/figures/*.png
+reports/figures/*.jpg
+reports/figures/*.svg
+outputs/
+logs/
+*.log
+
+# ==========================================
+# Jupyter Notebooks
+# ==========================================
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+*.nbconvert.ipynb
+
+# ==========================================
+# Streamlit & UI Cache
+# ==========================================
+.streamlit/secrets.toml
+
+# ==========================================
+# IDEs & OS Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Distribution / Packaging
+# ==========================================
+build/
+dist/
+*.egg-info/
+.eggs/

@@ -1,0 +1,127 @@
+{
+  "Project": "Public Transport Demand Prediction",
+  "Course": "Data Mining and Data Warehousing (DMDW)",
+  "Version": "1.0.0",
+  "Description": "End-to-end ML pipeline for APSRTC bus passenger demand prediction with star-schema data warehouse, OLAP, K-Means clustering, Isolation Forest, and SHAP explainability.",
+  
+  "Architecture": {
+    "ETL": "src/etl/ — Extract, clean, feature-engineer 3 datasets",
+    "DataWarehouse": "src/warehouse/ — MySQL star-schema with OLAP queries",
+    "DataMining": "src/mining/ — K-Means clustering + Isolation Forest",
+    "ML": "src/ml/ — 5 regressors, time-aware split, hyperparameter tuning, SHAP",
+    "Prediction": "outputs/predictions/demand_predictions.csv — Tableau-ready",
+    "Tableau": "6 dashboards documented in tableau/dashboard_documentation.md"
+  },
+
+  "Datasets": {
+    "APSRTC": {
+      "rows": 1000,
+      "columns": 14,
+      "target": "passengers",
+      "routes": 15,
+      "date_range": "2024-01-01 to 2024-12-30"
+    },
+    "Railways": {
+      "rows": 8366,
+      "columns": 10,
+      "use": "OLAP analytics only (no demand column)"
+    },
+    "Flights": {
+      "rows": 15000,
+      "columns": 11,
+      "use": "OLAP analytics only"
+    }
+  },
+
+  "DataWarehouse": {
+    "Database": "transport_dw (MySQL)",
+    "Schema": "Star Schema",
+    "DimensionTables": ["dim_date", "dim_route", "dim_transport_mode", "dim_location"],
+    "FactTables": ["fact_transport", "fact_predictions"],
+    "AnalyticsTables": ["ml_model_metrics", "mining_clusters", "mining_anomalies"],
+    "OLAP_Operations": ["roll-up", "drill-down", "slice", "dice"]
+  },
+
+  "DataMining": {
+    "Clustering": {
+      "Algorithm": "K-Means",
+      "OptimalK": 4,
+      "SilhouetteScore": 0.4193,
+      "Clusters": ["Low Demand", "Medium Demand", "High Demand", "Peak-Dependent"],
+      "OutputFile": "outputs/predictions/route_clusters.csv"
+    },
+    "AnomalyDetection": {
+      "Algorithm": "Isolation Forest",
+      "Contamination": 0.05,
+      "AnomaliesFound": 50,
+      "AnomalyRate": "5.00%",
+      "OutputFile": "outputs/predictions/apsrtc_anomalies.csv"
+    }
+  },
+
+  "MachineLearning": {
+    "Problem": "Regression (predict passenger count)",
+    "Target": "passengers",
+    "SplitStrategy": "Time-aware chronological (Train 70% / Val 15% / Test 15%)",
+    "NoShuffle": true,
+    "FutureLeakageCheck": true,
+    "LeakyFeaturesExcluded": ["revenue", "occupancy_rate", "seats_remaining", "revenue_per_km", "fuel_efficiency"],
+    "Features": 26,
+    "Models": {
+      "LinearRegression": {"type": "Baseline"},
+      "RandomForest": {"n_estimators": 300, "type": "Ensemble"},
+      "XGBoost": {"n_estimators": 400, "max_depth": 6, "type": "GradientBoosting"},
+      "LightGBM": {"n_estimators": 400, "num_leaves": 63, "type": "GradientBoosting"},
+      "CatBoost": {"iterations": 400, "depth": 6, "type": "GradientBoosting"}
+    },
+    "BestModel": "CatBoost",
+    "Tuning": {
+      "Method": "RandomizedSearchCV",
+      "CV": "TimeSeriesSplit (5 folds)",
+      "Scoring": "neg_mean_absolute_error"
+    },
+    "Outputs": {
+      "BestModel": "models/best_model.pkl",
+      "AllModels": "models/all_models.pkl",
+      "Metrics": "outputs/metrics/model_metrics.csv",
+      "Predictions": "outputs/predictions/demand_predictions.csv"
+    }
+  },
+
+  "Explainability": {
+    "Framework": "SHAP (TreeExplainer)",
+    "TopFeatures": [
+      "capacity",
+      "rolling_mean_14",
+      "bus_type_encoded",
+      "week_of_year",
+      "rolling_mean_7",
+      "lag_7",
+      "fare_per_passenger",
+      "day_num"
+    ],
+    "Outputs": [
+      "reports/figures/shap_global_importance.png",
+      "reports/figures/shap_summary_plot.png",
+      "reports/figures/shap_waterfall_single.png",
+      "outputs/metrics/shap_feature_importance.csv"
+    ]
+  },
+
+  "TableauDashboards": [
+    "Executive Overview",
+    "Demand Analysis",
+    "Route Clustering (K-Means)",
+    "Anomaly Detection",
+    "ML Model Performance",
+    "Demand Prediction"
+  ],
+
+  "RunCommands": {
+    "FullPipeline": "python run_pipeline.py",
+    "ETLOnly": "python run_pipeline.py --steps etl",
+    "TrainOnly": "python run_pipeline.py --steps train",
+    "Tests": "python tests/test_pipeline.py",
+    "SinglePrediction": "from src.ml.predict import predict_single; predict_single(route='Kurnool-Hyderabad', date='2024-12-15', bus_type='Volvo Ac', distance_km=326, capacity=49)"
+  }
+}
