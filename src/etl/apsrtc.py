@@ -17,7 +17,6 @@ import warnings
 import zipfile
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from src.utils.logger import get_logger
@@ -146,38 +145,32 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     # FIX BUG 3: rolling_std_7 needs min_periods=2 for std; fill NaN with route median
     df["rolling_std_7"]   = grp.transform(lambda x: x.shift(1).rolling(7, min_periods=2).std())
 
-    # Fill lag NaNs with route median (never with 0 — that corrupts the signal)
-    lag_cols = ["lag_1", "lag_7", "rolling_mean_7", "rolling_mean_14",
-                "rolling_max_7", "rolling_min_7", "rolling_std_7"]
-    route_medians = df.groupby("route")[TARGET].median()
-    route_std     = df.groupby("route")[TARGET].std().fillna(5.0)
-    for col in lag_cols:
-        if col == "rolling_std_7":
-            df[col] = df[col].fillna(df["route"].map(route_std))
-        else:
-            df[col] = df[col].fillna(df["route"].map(route_medians))
+    # NOTE: Do NOT fill NaN lag/rolling values here.
+    # route_medians computed over the full df would leak target information
+    # from future/test rows into training features (Bug 3 data leakage fix).
+    # NaN-filling is deferred to ml/preprocessing.py::_fill_route_medians,
+    # which runs AFTER the chronological split and uses only train-set statistics.
 
-    # ── NEW FEATURES (Bug 2 fix): Powerful leakage-free historical means ───────
+    # ── NEW FEATURES: Powerful leakage-free historical means ─────────────────
+    # All use _expanding_mean_shift (shift(1) before expanding) so no future
+    # target values are ever included. NaN fills (first-row-per-group) are
+    # deferred to ml/preprocessing.py::_fill_route_medians, which uses
+    # train-only statistics to avoid data leakage.
+
     # 1. Per-route expanding historical mean (strongest predictor of route baseline)
     df["route_hist_mean"] = grp.transform(_expanding_mean_shift)
-    df["route_hist_mean"] = df["route_hist_mean"].fillna(df["route"].map(route_medians))
 
     # 2. Per bus_type expanding historical mean (bus class demand signal)
     bus_grp = df.groupby("bus_type")[TARGET]
-    bus_medians = df.groupby("bus_type")[TARGET].median()
     df["bustype_hist_mean"] = bus_grp.transform(_expanding_mean_shift)
-    df["bustype_hist_mean"] = df["bustype_hist_mean"].fillna(df["bus_type"].map(bus_medians))
 
     # 3. Per route x month historical mean (captures seasonality per route)
     route_month_grp = df.groupby(["route", "month_num"])[TARGET]
     df["route_month_mean"] = route_month_grp.transform(_expanding_mean_shift)
-    # Fill remaining NaN with route median
-    df["route_month_mean"] = df["route_month_mean"].fillna(df["route"].map(route_medians))
 
     # 4. Per route x bus_type historical mean (route+class combo baseline)
     route_bus_grp = df.groupby(["route", "bus_type"])[TARGET]
     df["route_bustype_mean"] = route_bus_grp.transform(_expanding_mean_shift)
-    df["route_bustype_mean"] = df["route_bustype_mean"].fillna(df["route"].map(route_medians))
 
     # ── Encode categoricals (single authoritative encoding via cat.codes) ───────
     df["route_encoded"]    = df["route"].astype("category").cat.codes

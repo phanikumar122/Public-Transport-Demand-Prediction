@@ -170,10 +170,12 @@ def run(n_clusters: int = None) -> pd.DataFrame:
     plot_elbow(k_range, inertias, sil_scores)
 
     if n_clusters is None:
-        # Auto-select: K with best silhouette
-        best_idx = int(np.argmax(sil_scores[1:]))  # skip k=1 dummy
-        n_clusters = list(k_range)[best_idx + 1]
-        logger.info("Auto-selected K=%d (silhouette=%.4f)", n_clusters, sil_scores[best_idx+1])
+        # Auto-select: K with best silhouette score.
+        # k_range starts at 2, so sil_scores[0] corresponds to k=2 — there is
+        # no k=1 dummy entry to skip (Bug 5 off-by-one fix).
+        best_idx = int(np.argmax(sil_scores))
+        n_clusters = list(k_range)[best_idx]
+        logger.info("Auto-selected K=%d (silhouette=%.4f)", n_clusters, sil_scores[best_idx])
 
     # Final K-Means
     km_final = KMeans(n_clusters=n_clusters, n_init=20, random_state=RANDOM_SEED)

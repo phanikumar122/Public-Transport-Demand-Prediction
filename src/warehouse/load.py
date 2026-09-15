@@ -13,11 +13,9 @@ Usage:
     python -m src.warehouse.load
 """
 
-import json
-import os
 import sys
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -81,20 +79,34 @@ def create_schema(engine):
 
 # --- DIM_DATE population ------------------------------------------------------
 
+# Holiday set used to populate dim_date.is_holiday.
+# Must stay in sync with INDIAN_HOLIDAYS in src/etl/apsrtc.py and src/ml/predict.py.
 HOLIDAYS = {
     date(y, m, d)
     for y in range(2019, 2026)
-    for (m, d) in [(1,26),(8,15),(10,2),(12,25),(1,1),(5,1),(4,14)]
+    for (m, d) in [
+        (1, 26),   # Republic Day
+        (8, 15),   # Independence Day
+        (10, 2),   # Gandhi Jayanti
+        (11, 1),   # Andhra Pradesh Statehood Day
+        (12, 25),  # Christmas
+        (1, 1),    # New Year
+        (5, 1),    # Labour Day
+        (4, 14),   # Ambedkar Jayanti
+        (10, 24),  # Diwali (approximate fixed date used across modules)
+    ]
 }
 
 HOLIDAY_NAMES = {
-    (1,26): "Republic Day",
-    (8,15): "Independence Day",
-    (10,2): "Gandhi Jayanti",
-    (12,25): "Christmas",
-    (1,1): "New Year",
-    (5,1): "Labour Day",
-    (4,14): "Ambedkar Jayanti",
+    (1, 26):  "Republic Day",
+    (8, 15):  "Independence Day",
+    (10, 2):  "Gandhi Jayanti",
+    (11, 1):  "Andhra Pradesh Statehood Day",
+    (12, 25): "Christmas",
+    (1, 1):   "New Year",
+    (5, 1):   "Labour Day",
+    (4, 14):  "Ambedkar Jayanti",
+    (10, 24): "Diwali",
 }
 
 

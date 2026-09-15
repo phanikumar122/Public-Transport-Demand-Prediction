@@ -18,11 +18,10 @@ from pathlib import Path
 import sys
 import warnings
 
-import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.config import DATA_PROCESSED_DIR, RANDOM_SEED
+from src.config import DATA_PROCESSED_DIR
 from src.utils.logger import get_logger
 
 warnings.filterwarnings("ignore")
@@ -94,13 +93,21 @@ def select_features(df: pd.DataFrame) -> tuple[list, pd.DataFrame]:
     return used, df
 
 
-def _fill_route_medians(df: pd.DataFrame, feature_cols: list) -> pd.DataFrame:
+def _fill_route_medians(
+    df: pd.DataFrame,
+    feature_cols: list,
+    train_route_medians: pd.Series,
+    train_global_std: float,
+) -> pd.DataFrame:
     """
-    BUG 3 FIX: Fill NaN feature values with per-route medians rather than 0.
-    Zero-fill corrupts lag and rolling features which are centred around ~37 passengers.
+    Fill NaN feature values using statistics derived exclusively from the
+    TRAINING partition (passed in as parameters) to prevent data leakage.
+
+    - lag/rolling/hist_mean features -> per-route median from training data
+    - rolling_std_7                  -> global std of passengers from training data
+    - other numeric features         -> column median within the current partition
     """
     df = df.copy()
-    route_medians = df.groupby("route")[TARGET].median()
 
     for col in feature_cols:
         n_null = df[col].isna().sum()
@@ -108,13 +115,13 @@ def _fill_route_medians(df: pd.DataFrame, feature_cols: list) -> pd.DataFrame:
             if col in ["lag_1", "lag_7", "rolling_mean_7", "rolling_mean_14",
                        "rolling_max_7", "rolling_min_7", "route_hist_mean",
                        "bustype_hist_mean", "route_month_mean", "route_bustype_mean"]:
-                # Fill with route median (meaningful central value)
-                df[col] = df[col].fillna(df["route"].map(route_medians))
+                # Fill with route median from TRAINING data only
+                df[col] = df[col].fillna(df["route"].map(train_route_medians))
             elif col == "rolling_std_7":
-                # Fill with global std of passengers (5–11 passengers typical)
-                df[col] = df[col].fillna(df[TARGET].std())
+                # Fill with global std of passengers from TRAINING data only
+                df[col] = df[col].fillna(train_global_std)
             else:
-                # For truly unknown numerics, fill with column median
+                # For truly unknown numerics, fill with column median of current partition
                 df[col] = df[col].fillna(df[col].median())
     return df
 
@@ -132,23 +139,29 @@ def time_aware_split(
       TEST   -> newest 15% (held-out evaluation)
 
     No shuffling -- prevents future leakage.
-    NaN fill uses route medians (not zero).
+    NaN fill uses route medians derived from TRAINING data only (Bug 3 fix).
     """
     # Sort by DATE ONLY for global temporal split
     # (route sort is only for computing lag features, not for splitting)
     df = df.sort_values("date").reset_index(drop=True)
-
-    # Fill NaN before splitting
-    df = _fill_route_medians(df, feature_cols)
 
     n = len(df)
     n_test  = max(1, int(n * test_frac))
     n_val   = max(1, int(n * val_frac))
     n_train = n - n_val - n_test
 
-    train_df = df.iloc[:n_train]
-    val_df   = df.iloc[n_train: n_train + n_val]
-    test_df  = df.iloc[n_train + n_val:]
+    train_df = df.iloc[:n_train].copy()
+    val_df   = df.iloc[n_train: n_train + n_val].copy()
+    test_df  = df.iloc[n_train + n_val:].copy()
+
+    # Compute fill statistics exclusively from the TRAINING partition
+    # so no future information leaks into val/test NaN fills.
+    train_route_medians = train_df.groupby("route")[TARGET].median()
+    train_global_std    = float(train_df[TARGET].std())
+
+    train_df = _fill_route_medians(train_df, feature_cols, train_route_medians, train_global_std)
+    val_df   = _fill_route_medians(val_df,   feature_cols, train_route_medians, train_global_std)
+    test_df  = _fill_route_medians(test_df,  feature_cols, train_route_medians, train_global_std)
 
     logger.info("Time-aware split:")
     logger.info("  TRAIN : %d rows (%s -> %s)",

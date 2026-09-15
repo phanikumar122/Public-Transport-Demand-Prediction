@@ -12,7 +12,6 @@ Tests:
 """
 
 import sys
-import math
 from pathlib import Path
 
 import numpy as np
@@ -58,7 +57,7 @@ def test_no_duplicates():
     df = preprocess(load_raw())
     n_dups = df.duplicated().sum()
     assert n_dups == 0, f"Found {n_dups} duplicate rows after preprocessing"
-    print(f"OK  No duplicates in APSRTC cleaned data")
+    print("OK  No duplicates in APSRTC cleaned data")
 
 
 # ── Test 5: Flights load and parse correctly ──────────────────────────────────

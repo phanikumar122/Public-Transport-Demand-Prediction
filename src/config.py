@@ -50,10 +50,7 @@ TEST_SIZE    = float(os.getenv("TEST_SIZE",  "0.15"))
 VAL_SIZE     = float(os.getenv("VAL_SIZE",   "0.15"))
 BUS_CAPACITY = int(os.getenv("BUS_CAPACITY", "50"))
 
-# ─── Target variable ──────────────────────────────────────────────────────────
-# Confirmed after dataset inspection in Phase 1.
-# Will be updated by inspect_data.py if needed.
-TARGET_COLUMN = "Passengers_Boarded"   # placeholder; replaced after inspection
+TARGET_COLUMN = "passengers"   # confirmed column name in APSRTC_Transport_Data.csv
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"

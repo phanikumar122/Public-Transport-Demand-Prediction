@@ -76,9 +76,9 @@ def plot_global_importance(shap_values, X_sample: pd.DataFrame):
     }).sort_values("mean_abs_shap", ascending=False)
 
     fig, ax = plt.subplots(figsize=(10, max(6, len(importance_df) * 0.35)))
-    bars = ax.barh(importance_df["feature"][:20][::-1],
-                   importance_df["mean_abs_shap"][:20][::-1],
-                   color="steelblue", alpha=0.85)
+    ax.barh(importance_df["feature"][:20][::-1],
+            importance_df["mean_abs_shap"][:20][::-1],
+            color="steelblue", alpha=0.85)
     ax.set_xlabel("Mean |SHAP Value|", fontsize=12)
     ax.set_title("Global Feature Importance (SHAP)", fontsize=14, fontweight="bold")
     ax.tick_params(axis="y", labelsize=9)

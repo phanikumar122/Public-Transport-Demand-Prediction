@@ -31,6 +31,9 @@ from src.utils.logger import get_logger
 logger = get_logger("run_pipeline")
 
 
+# Canonical ordered step list (one entry per logical step — aliases excluded).
+# Used by --steps all to prevent the warehouse load from running 3× due to
+# the load_dw / warehouse / dw aliases all existing as separate STEP_RUNNERS keys.
 VALID_STEPS = ["etl", "load_dw", "mine", "train", "tune", "explain", "predict"]
 
 
@@ -107,7 +110,9 @@ STEP_RUNNERS = {
     "explain":   run_explain,
     "predict":   run_predict,
 }
-VALID_STEPS = list(STEP_RUNNERS.keys())
+# NOTE: VALID_STEPS is already defined above with only canonical keys.
+# Do NOT redefine it here as list(STEP_RUNNERS.keys()) — that would re-introduce
+# the aliases (warehouse, dw) and cause the warehouse load to run 3× with --steps all.
 
 
 def main():
@@ -121,7 +126,7 @@ def main():
     args = parser.parse_args()
 
     if args.steps.strip().lower() == "all":
-        steps = list(STEP_RUNNERS.keys())
+        steps = list(VALID_STEPS)  # canonical ordered list — no aliases
     else:
         steps = [s.strip().lower() for s in args.steps.split(",")]
         invalid = [s for s in steps if s not in VALID_STEPS]
@@ -140,7 +145,7 @@ def main():
     for step in steps:
         t0 = time.time()
         try:
-            result = STEP_RUNNERS[step]()
+            STEP_RUNNERS[step]()
             elapsed = time.time() - t0
             results[step] = {"status": "OK", "elapsed_s": round(elapsed, 1)}
             logger.info("OK Step '%s' completed in %.1fs", step, elapsed)

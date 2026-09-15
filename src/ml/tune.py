@@ -20,7 +20,7 @@ from catboost import CatBoostRegressor
 from sklearn.ensemble import RandomForestRegressor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.config import MODELS_DIR, RANDOM_SEED, METRICS_DIR
+from src.config import MODELS_DIR, RANDOM_SEED
 from src.ml.preprocessing import prepare
 from src.ml.evaluate import compute_metrics, save_metrics, build_comparison_table
 from src.utils.logger import get_logger
@@ -150,28 +150,40 @@ def run(candidate_models: list = None) -> dict:
         logger.warning("No tuning results. Exiting.")
         return {}
 
-    # Pick the best tuned model
-    best_name = max(results, key=lambda n: results[n]["test_metrics"]["R2"])
+    # Pick the best tuned model by CV MAE (lower = better).
+    # Using CV score keeps the test set as a truly held-out, unbiased metric.
+    best_name = min(results, key=lambda n: results[n]["cv_score"])
     best_info = results[best_name]
-    logger.info("\n* Best tuned model: %s (Test R²=%.4f)", best_name, best_info["test_metrics"]["R2"])
+    logger.info("\n* Best tuned model: %s (CV MAE=%.4f)", best_name, best_info["cv_score"])
 
     # Save tuned model
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     model_path = MODELS_DIR / "tuned_model.pkl"
     joblib.dump(best_info["model"], model_path)
 
-    # Overwrite best_model.pkl with tuned version if it beats previous
+    # Overwrite best_model.pkl if tuned model beats previous best.
+    # Comparison uses CV MAE (tuned) vs val MAE from stored metadata
+    # to avoid using the test set as a selection criterion.
     prev_path = MODELS_DIR / "best_model.pkl"
     if prev_path.exists():
-        prev_model = joblib.load(prev_path)
-        prev_pred = np.clip(prev_model.predict(splits["X_test"]), 0, None)
-        from sklearn.metrics import r2_score
-        prev_r2 = r2_score(splits["y_test"], prev_pred)
-        if best_info["test_metrics"]["R2"] > prev_r2:
-            joblib.dump(best_info["model"], prev_path)
-            logger.info("OK Tuned model BEATS previous best. Updated best_model.pkl")
+        prev_meta_path = MODELS_DIR / "model_metadata.json"
+        if prev_meta_path.exists():
+            import json as _json
+            with open(prev_meta_path) as _f:
+                prev_meta = _json.load(_f)
+            # val_mae may not be in old metadata; fall back to accepting tuned
+            prev_val_mae = prev_meta.get("metrics", {}).get("val_MAE", float("inf"))
         else:
-            logger.info("Previous best model still wins. Keeping best_model.pkl.")
+            prev_val_mae = float("inf")
+
+        # cv_score is already a positive MAE (lower = better)
+        if best_info["cv_score"] < prev_val_mae:
+            joblib.dump(best_info["model"], prev_path)
+            logger.info("OK Tuned model BEATS previous best (CV MAE %.4f < prev val MAE %.4f). Updated best_model.pkl",
+                        best_info["cv_score"], prev_val_mae)
+        else:
+            logger.info("Previous best model still wins (prev val MAE %.4f <= CV MAE %.4f). Keeping best_model.pkl.",
+                        prev_val_mae, best_info["cv_score"])
     else:
         joblib.dump(best_info["model"], prev_path)
 

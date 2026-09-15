@@ -13,7 +13,6 @@ import math
 import json
 import warnings
 from pathlib import Path
-from datetime import datetime
 import sys
 
 import numpy as np
@@ -21,7 +20,7 @@ import pandas as pd
 import joblib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.config import MODELS_DIR, PREDICTIONS_DIR, DATA_PROCESSED_DIR, RANDOM_SEED
+from src.config import MODELS_DIR, PREDICTIONS_DIR
 from src.ml.preprocessing import prepare, select_features, load_feature_data
 from src.utils.logger import get_logger
 
@@ -67,6 +66,7 @@ def _build_row_dict(
     is_holiday: int,
     df_hist: pd.DataFrame,
     feature_cols: list,
+    depot: str = "",
 ) -> dict:
     """
     BUG 5 FIX: Build a complete feature row including all new historical mean features.
@@ -99,12 +99,12 @@ def _build_row_dict(
     route_bustype_mean = route_bus_hist.mean()       if len(route_bus_hist) >= 1 else route_hist_mean
 
     # Categorical encodings — map from training data categories
-    route_cats    = dict(enumerate(sorted(df_hist["route"].unique())))
-    route_inv     = {v: k for k, v in route_cats.items()}
-    bustype_cats  = dict(enumerate(sorted(df_hist["bus_type"].unique())))
-    bustype_inv   = {v: k for k, v in bustype_cats.items()}
-    depot_cats    = dict(enumerate(sorted(df_hist["depot"].unique())))
-    depot_inv     = {v: k for k, v in depot_cats.items()}
+    route_cats   = dict(enumerate(sorted(df_hist["route"].unique())))
+    route_inv    = {v: k for k, v in route_cats.items()}
+    bustype_cats = dict(enumerate(sorted(df_hist["bus_type"].unique())))
+    bustype_inv  = {v: k for k, v in bustype_cats.items()}
+    depot_cats   = dict(enumerate(sorted(df_hist["depot"].unique())))
+    depot_inv    = {v: k for k, v in depot_cats.items()}
 
     row = {
         "capacity":             capacity,
@@ -131,7 +131,8 @@ def _build_row_dict(
         "route_bustype_mean":   route_bustype_mean,
         "route_encoded":        route_inv.get(route, 0),
         "bus_type_encoded":     bustype_inv.get(bus_type, 0),
-        "depot_encoded":        0,
+        # Use the depot-to-code mapping from training data (Bug 7 fix — was hardcoded 0)
+        "depot_encoded":        depot_inv.get(depot, 0),
         "dow_encoded":          dt.dayofweek,
         "month_encoded":        dt.month,
     }
@@ -147,6 +148,7 @@ def predict_single(
     fare_per_passenger: float = 100.0,
     is_holiday: int = 0,
     bus_capacity: int = 50,
+    depot: str = "",
 ) -> dict:
     """
     Predict demand for a single trip.
@@ -172,7 +174,7 @@ def predict_single(
     dt = pd.to_datetime(date)
     row = _build_row_dict(
         route, dt, bus_type, distance_km, capacity, fare_per_passenger,
-        is_holiday, df_full, feature_cols
+        is_holiday, df_full, feature_cols, depot=depot
     )
 
     X = pd.DataFrame([row])
@@ -217,7 +219,6 @@ def generate_batch_predictions(bus_capacity: int = 50) -> pd.DataFrame:
 
     df_full  = load_feature_data()
     low_thr, high_thr = calibrate_thresholds(df_full)
-    feature_cols = splits["feature_cols"]
 
     records = []
     prediction_id = 1

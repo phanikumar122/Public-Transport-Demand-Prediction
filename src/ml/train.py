@@ -14,7 +14,6 @@ Saves: models/all_models.pkl, outputs/metrics/model_metrics.csv
 """
 
 import json
-import pickle
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -25,7 +24,7 @@ import pandas as pd
 import joblib
 
 from sklearn.linear_model import Ridge
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
@@ -113,7 +112,6 @@ def train_and_evaluate(splits: dict) -> tuple[dict, pd.DataFrame]:
     X_train, y_train = splits["X_train"], splits["y_train"]
     X_val,   y_val   = splits["X_val"],   splits["y_val"]
     X_test,  y_test  = splits["X_test"],  splits["y_test"]
-    feature_cols     = splits["feature_cols"]
 
     models = get_models()
     trained = {}
@@ -178,13 +176,19 @@ def train_and_evaluate(splits: dict) -> tuple[dict, pd.DataFrame]:
 
 def select_best_model(trained: dict) -> str:
     """
-    Select the model with the best test MAE (more reliable than R² on small samples).
-    Ties broken by R².
+    Select the model with the best VALIDATION MAE.
+    Using the validation set (not the test set) for model selection keeps
+    the test set as a truly held-out, unbiased final evaluation metric.
+    Ties broken by validation R².
     """
-    test_mae = {name: d["test_metrics"]["MAE"] for name, d in trained.items()}
-    best = min(test_mae, key=test_mae.get)
-    bm = trained[best]["test_metrics"]
-    logger.info("Best model: %s (Test MAE=%.3f, R2=%.4f)", best, bm["MAE"], bm["R2"])
+    val_mae = {name: d["val_metrics"]["MAE"] for name, d in trained.items()}
+    best = min(val_mae, key=val_mae.get)
+    bm_val  = trained[best]["val_metrics"]
+    bm_test = trained[best]["test_metrics"]
+    logger.info(
+        "Best model: %s (Val MAE=%.3f, Val R2=%.4f | Test MAE=%.3f, Test R2=%.4f)",
+        best, bm_val["MAE"], bm_val["R2"], bm_test["MAE"], bm_test["R2"],
+    )
     return best
 
 

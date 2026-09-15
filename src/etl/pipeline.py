@@ -6,7 +6,6 @@ Usage:
     python run_pipeline.py              # From project root
 """
 
-import argparse
 import sys
 from pathlib import Path
 

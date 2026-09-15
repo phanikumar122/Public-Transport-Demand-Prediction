@@ -17,12 +17,10 @@ import warnings
 from pathlib import Path
 import sys
 
-import numpy as np
-import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import seaborn as sns
+import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
@@ -60,16 +58,16 @@ def run(contamination: float = 0.05) -> pd.DataFrame:
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Isolation Forest
+    # Isolation Forest — fit once, then derive both anomaly scores and labels
     iso = IsolationForest(
         contamination=contamination,
         n_estimators=200,
         random_state=RANDOM_SEED,
         n_jobs=-1,
     )
-    df["anomaly_score"] = -iso.fit_predict(X_scaled)   # -1=anomaly -> 1, 1=normal -> -1 … invert
+    iso.fit(X_scaled)
     df["anomaly_score"] = iso.score_samples(X_scaled)   # real scores (more negative = more anomalous)
-    df["is_anomaly"]    = (iso.fit_predict(X_scaled) == -1).astype(int)
+    df["is_anomaly"]    = (iso.predict(X_scaled) == -1).astype(int)
 
     n_total    = len(df)
     n_anomaly  = df["is_anomaly"].sum()
