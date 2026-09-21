@@ -1,0 +1,4 @@
+model_name,split,MAE,RMSE,MAPE,R2
+CatBoost (Tuned),test,25.6207,39.3347,31.262,0.724354
+XGBoost (Tuned),test,25.4213,39.7255,30.8025,0.71885
+LightGBM (Tuned),test,25.5828,39.8473,31.0202,0.717123
