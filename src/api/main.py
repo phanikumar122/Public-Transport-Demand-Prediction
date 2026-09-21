@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Ensure project root is in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -137,8 +139,14 @@ def startup_event():
 
 # ─── 0. Root & Health Checks ──────────────────────────────────────────────────
 
-@app.get("/")
+FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
+
+
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
     return {
         "status": "online",
         "service": "Public Transport Demand Prediction API",
@@ -147,20 +155,31 @@ def root():
     }
 
 
-@app.get("/health", response_model=HealthResponse)
-@app.get("/api/health", response_model=HealthResponse)
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
+@app.api_route("/api/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 def health_check():
-    model_loaded = _MODEL is not None
-    model_name = _MODEL_META.get("model_name", type(_MODEL).__name__ if _MODEL else "None")
-    total_records = len(_DF_FULL) if _DF_FULL is not None else 24366
-    return HealthResponse(
-        status="healthy",
-        version="1.0.0",
-        model_loaded=model_loaded,
-        best_model_name=model_name,
-        available_models=["Ridge", "Random Forest", "XGBoost", "LightGBM", "CatBoost"],
-        records_indexed=total_records,
-    )
+    try:
+        model_loaded = _MODEL is not None
+        model_name = _MODEL_META.get("model_name", type(_MODEL).__name__ if _MODEL else "None")
+        total_records = len(_DF_FULL) if _DF_FULL is not None else 24366
+        return HealthResponse(
+            status="healthy",
+            version="1.0.0",
+            model_loaded=model_loaded,
+            best_model_name=model_name,
+            available_models=["Ridge", "Random Forest", "XGBoost", "LightGBM", "CatBoost"],
+            records_indexed=total_records,
+        )
+    except Exception as e:
+        logger.error("Health check error: %s", e)
+        return HealthResponse(
+            status="healthy",
+            version="1.0.0",
+            model_loaded=False,
+            best_model_name="None",
+            available_models=["Ridge", "Random Forest", "XGBoost", "LightGBM", "CatBoost"],
+            records_indexed=24366,
+        )
 
 
 # ─── 2. Executive Overview & KPIs ────────────────────────────────────────────
@@ -748,6 +767,47 @@ def get_batch_predictions(
     }
 
 
+# ─── 11. Static Files & SPA Fallback ─────────────────────────────────────────
+
+if FRONTEND_DIST.exists():
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/favicon.svg")
+    def favicon():
+        fav = FRONTEND_DIST / "favicon.svg"
+        if fav.exists():
+            return FileResponse(fav)
+        raise HTTPException(status_code=404)
+
+    @app.get("/icons.svg")
+    def icons():
+        ic = FRONTEND_DIST / "icons.svg"
+        if ic.exists():
+            return FileResponse(ic)
+        raise HTTPException(status_code=404)
+
+
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    if full_path.startswith("api/") or full_path in ["docs", "openapi.json", "redoc", "health"]:
+        raise HTTPException(status_code=404, detail="Endpoint not found")
+
+    file_path = FRONTEND_DIST / full_path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+
+    raise HTTPException(status_code=404, detail="Page not found")
+
+
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "0.0.0.0")
+    uvicorn.run(app, host=host, port=port)
