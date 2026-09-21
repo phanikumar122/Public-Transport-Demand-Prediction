@@ -147,6 +147,7 @@ def root():
     }
 
 
+@app.get("/health", response_model=HealthResponse)
 @app.get("/api/health", response_model=HealthResponse)
 def health_check():
     model_loaded = _MODEL is not None
