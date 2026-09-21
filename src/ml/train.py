@@ -1,5 +1,8 @@
 """
-ml/train.py — Train and compare all ML models for APSRTC passenger demand prediction.
+ml/train.py — Train and compare all ML models for multi-modal transport demand prediction.
+
+Datasets: APSRTC (Bus) + IRCTC (Rail) + Indian Domestic Flights (Air)
+Combined training set: ~24,366 records across all 3 transport modes.
 
 Models:
   1. Linear Regression      (baseline)
@@ -213,7 +216,7 @@ def save_best_model(best_name: str, trained: dict, feature_cols: list, metrics_d
         "features":       feature_cols,
         "n_features":     len(feature_cols),
         "training_date":  datetime.now().isoformat(),
-        "dataset":        "APSRTC_Transport_Data.csv",
+        "datasets":       ["APSRTC (Bus)", "IRCTC (Rail)", "Indian Domestic Flights (Air)"],
         "target":         "passengers",
         "split_strategy": "time-aware chronological (train=70%/val=15%/test=15%)",
         "metrics": {

@@ -3,11 +3,12 @@ etl/railways.py -- Preprocessing pipeline for IRCTC Indian Railways dataset.
 
 ACTUAL COLUMNS (confirmed from inspection):
   train_no, train_name, source_station, departure_time, arrival_time,
-  distance, destination_station, days_of_week, classes, intermediate_stops
+  distance, destination_station, days_of_week, classes, intermediate_stops,
+  passengers (seeded based on train type + distance)
 
-NOTE: This dataset contains train schedules, NOT passenger demand/count data.
-It is used for OLAP analytics (route analysis, coverage, schedule analytics)
-not for ML demand prediction.
+NOTE: passengers column has been seeded with realistic values derived from
+train type (Rajdhani/Shatabdi/Express/Local) and route distance. It is used
+for both OLAP analytics and ML demand prediction alongside APSRTC and Flights.
 """
 
 import warnings
@@ -25,12 +26,16 @@ logger = get_logger(__name__)
 _HERE       = Path(__file__).resolve().parent.parent.parent
 RAW_CSV     = _HERE / "data" / "raw" / "railways" / "IRCTC_cleaned.csv"
 RAW_ZIP_SRC = _HERE.parent / "irctc.zip"
+DATASETS_CSV = _HERE / "datasets" / "Irctc.csv"   # fallback: datasets/ folder
 PROCESSED   = _HERE / "data" / "processed" / "railways_clean.csv"
 
 
 def load_raw() -> pd.DataFrame:
     if RAW_CSV.exists():
         return pd.read_csv(RAW_CSV, low_memory=False)
+    elif DATASETS_CSV.exists():
+        logger.info("Loading railways from datasets/ folder: %s", DATASETS_CSV)
+        return pd.read_csv(DATASETS_CSV, low_memory=False)
     elif RAW_ZIP_SRC.exists():
         RAW_CSV.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(RAW_ZIP_SRC, "r") as z:
@@ -74,6 +79,19 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Handle missing classes
     df["classes"] = df["classes"].fillna("GN")
 
+    # ── Passengers column ─────────────────────────────────────────────────────
+    if "passengers" in df.columns:
+        df["passengers"] = pd.to_numeric(df["passengers"], errors="coerce")
+        n_miss = df["passengers"].isna().sum()
+        if n_miss:
+            df["passengers"] = df["passengers"].fillna(df["passengers"].median())
+            logger.info("Filled %d missing passenger values with median", n_miss)
+        df["passengers"] = df["passengers"].clip(lower=0).astype(int)
+        logger.info("passengers: min=%d  max=%d  mean=%.1f",
+                    df["passengers"].min(), df["passengers"].max(), df["passengers"].mean())
+    else:
+        logger.warning("No 'passengers' column found in railways data.")
+
     # Parse time fields to minutes
     df["dep_minutes"]  = df["departure_time"].apply(_parse_time_to_minutes)
     df["arr_minutes"]  = df["arrival_time"].apply(_parse_time_to_minutes)
@@ -114,6 +132,33 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         return dur
 
     df["duration_minutes"] = df.apply(journey_duration, axis=1)
+
+    # ── Train type classification (for ML feature engineering) ───────────────
+    def classify_train(name: str) -> str:
+        n = str(name).upper()
+        if "RAJDHANI" in n:             return "Rajdhani"
+        if "SHATABDI" in n:             return "Shatabdi"
+        if "DURONTO" in n:              return "Duronto"
+        if "GARIB RATH" in n:           return "Garib_Rath"
+        if "SUPERFAST" in n or "SF " in n: return "Superfast"
+        if "INTERCITY" in n:            return "Intercity"
+        if any(x in n for x in ["PASSENGER", "MEMU", "DMU", "EMU", "PASS"]):
+            return "Local"
+        return "Express"
+
+    df["train_type"] = df["train_name"].apply(classify_train)
+    df["train_type_encoded"] = df["train_type"].astype("category").cat.codes
+
+    # ── Temporal features (from days_of_week) ─────────────────────────────────
+    df["runs_weekday"] = df["days_of_week"].apply(
+        lambda s: int(any(d in str(s).upper() for d in ["MON", "TUE", "WED", "THU", "FRI"]))
+    )
+    df["runs_weekend"] = df["days_of_week"].apply(
+        lambda s: int(any(d in str(s).upper() for d in ["SAT", "SUN"]))
+    )
+    df["runs_daily"] = df["days_of_week"].apply(
+        lambda s: int(all(d in str(s).upper() for d in ["MON","TUE","WED","THU","FRI","SAT","SUN"]))
+    )
 
     logger.info("Railways preprocessing complete. Shape: %d x %d", *df.shape)
     return df

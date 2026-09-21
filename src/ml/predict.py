@@ -5,7 +5,7 @@ Input : route, date, bus_type, distance_km, capacity, fare_per_passenger, is_hol
 Output: predicted_passenger_demand, demand_category, recommended_buses
 
 Also generates batch predictions on all splits and saves to:
-  - outputs/predictions/demand_predictions.csv  (for Tableau)
+  - outputs/predictions/demand_predictions.csv
   - MySQL fact_predictions table (via load.py, optional)
 """
 
@@ -35,16 +35,18 @@ INDIAN_HOLIDAYS = {
 
 def calibrate_thresholds(df: pd.DataFrame) -> tuple[float, float]:
     """Set demand thresholds from 33rd/66th percentile of training target."""
-    p33 = df["passengers"].quantile(0.33)
-    p66 = df["passengers"].quantile(0.66)
+    s = pd.to_numeric(df["passengers"], errors="coerce").dropna()
+    p33 = float(s.quantile(0.33)) if len(s) > 0 else 30.0
+    p66 = float(s.quantile(0.66)) if len(s) > 0 else 50.0
     logger.info("Demand thresholds -- Low < %.0f  |  High > %.0f", p33, p66)
     return p33, p66
 
 
 def demand_category(val: float, low: float, high: float) -> str:
-    if val < low:
+    val_f, low_f, high_f = float(val), float(low), float(high)
+    if val_f < low_f:
         return "Low"
-    elif val > high:
+    elif val_f > high_f:
         return "High"
     return "Medium"
 
@@ -98,12 +100,19 @@ def _build_row_dict(
     route_month_mean  = route_month_hist.mean()      if len(route_month_hist) >= 1 else route_hist_mean
     route_bustype_mean = route_bus_hist.mean()       if len(route_bus_hist) >= 1 else route_hist_mean
 
-    # Categorical encodings — map from training data categories
-    route_cats   = dict(enumerate(sorted(df_hist["route"].unique())))
+    # Categorical encodings — map from training data categories safely
+    route_vals   = [str(x) for x in df_hist["route"].dropna().unique()]
+    route_cats   = dict(enumerate(sorted(route_vals)))
     route_inv    = {v: k for k, v in route_cats.items()}
-    bustype_cats = dict(enumerate(sorted(df_hist["bus_type"].unique())))
+
+    bustype_col  = df_hist["bus_type"] if "bus_type" in df_hist.columns else pd.Series(dtype=object)
+    bustype_vals = [str(x) for x in bustype_col.dropna().unique()]
+    bustype_cats = dict(enumerate(sorted(bustype_vals)))
     bustype_inv  = {v: k for k, v in bustype_cats.items()}
-    depot_cats   = dict(enumerate(sorted(df_hist["depot"].unique())))
+
+    depot_col    = df_hist["depot"] if "depot" in df_hist.columns else pd.Series(dtype=object)
+    depot_vals   = [str(x) for x in depot_col.dropna().unique()]
+    depot_cats   = dict(enumerate(sorted(depot_vals)))
     depot_inv    = {v: k for k, v in depot_cats.items()}
 
     row = {
@@ -211,7 +220,7 @@ def predict_single(
 def generate_batch_predictions(bus_capacity: int = 50) -> pd.DataFrame:
     """
     Generate predictions for the entire APSRTC dataset.
-    Returns a prediction DataFrame ready for MySQL / Tableau.
+    Returns a prediction DataFrame ready for analysis and reporting.
     """
     logger.info("Generating batch predictions...")
     model = load_best_model()

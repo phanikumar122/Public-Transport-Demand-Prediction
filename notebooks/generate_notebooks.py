@@ -51,13 +51,11 @@ def code(src, idx=0):
 nb1 = nb([
     md("# 01 — Data Inspection\nLoad and inspect all three raw datasets.", 0),
     code(
-        "import sys, zipfile, pathlib\n"
-        "sys.path.insert(0, str(pathlib.Path('.').resolve().parent))\n"
-        "import pandas as pd\n\n"
-        "ZIP_ROOT = str(pathlib.Path('..').resolve().parent)\n\n"
-        "with zipfile.ZipFile(f'{ZIP_ROOT}/apsrtc.zip') as z:\n"
-        "    with z.open('APSRTC_Transport_Data.csv') as f:\n"
-        "        apsrtc = pd.read_csv(f)\n\n"
+        "import sys, pathlib\n"
+        "sys.path.insert(0, str(pathlib.Path('..').resolve()))\n"
+        "import pandas as pd\n"
+        "from src.etl.apsrtc import load_raw as load_apsrtc\n\n"
+        "apsrtc = load_apsrtc()\n"
         "print(f'APSRTC Shape: {apsrtc.shape}')\n"
         "apsrtc.head()",
         1
@@ -69,17 +67,15 @@ nb1 = nb([
     ),
     code("apsrtc.describe()", 3),
     code(
-        "with zipfile.ZipFile(f'{ZIP_ROOT}/domestic flights.zip') as z:\n"
-        "    with z.open('flights.csv') as f:\n"
-        "        flights = pd.read_csv(f)\n"
+        "from src.etl.flights import load_raw as load_flights\n\n"
+        "flights = load_flights()\n"
         "print(f'Flights Shape: {flights.shape}')\n"
         "flights.head()",
         4
     ),
     code(
-        "with zipfile.ZipFile(f'{ZIP_ROOT}/irctc.zip') as z:\n"
-        "    with z.open('IRCTC_cleaned.csv') as f:\n"
-        "        railways = pd.read_csv(f)\n"
+        "from src.etl.railways import load_raw as load_railways\n\n"
+        "railways = load_railways()\n"
         "print(f'Railways Shape: {railways.shape}')\n"
         "railways.head()",
         5

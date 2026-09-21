@@ -83,7 +83,7 @@ def test_railways_loads():
 def test_ml_splits():
     processed_path = ROOT / "data" / "processed" / "apsrtc_features.csv"
     if not processed_path.exists():
-        print("⚠ SKIP test_ml_splits — run ETL first to generate features file")
+        print("[SKIP] test_ml_splits -- run ETL first to generate features file")
         return
 
     from src.ml.preprocessing import prepare
@@ -111,7 +111,7 @@ def test_ml_splits():
 def test_model_loads_and_predicts():
     model_path = ROOT / "models" / "best_model.pkl"
     if not model_path.exists():
-        print("⚠ SKIP test_model_loads_and_predicts — run train.py first")
+        print("[SKIP] test_model_loads_and_predicts -- run train.py first")
         return
 
     import joblib
@@ -123,7 +123,7 @@ def test_model_loads_and_predicts():
     X_test = splits["X_test"]
 
     if len(X_test) == 0:
-        print("⚠ SKIP — test set is empty")
+        print("[SKIP] -- test set is empty")
         return
 
     preds = model.predict(X_test.iloc[:5])
@@ -137,7 +137,7 @@ def test_model_loads_and_predicts():
 def test_predict_single():
     model_path = ROOT / "models" / "best_model.pkl"
     if not model_path.exists():
-        print("⚠ SKIP test_predict_single — run train.py first")
+        print("[SKIP] test_predict_single -- run train.py first")
         return
 
     from src.ml.predict import predict_single
@@ -161,7 +161,7 @@ def test_predict_single():
 def test_no_null_targets():
     feat_path = ROOT / "data" / "processed" / "apsrtc_features.csv"
     if not feat_path.exists():
-        print("⚠ SKIP test_no_null_targets — run ETL first")
+        print("[SKIP] test_no_null_targets -- run ETL first")
         return
 
     df = pd.read_csv(feat_path)

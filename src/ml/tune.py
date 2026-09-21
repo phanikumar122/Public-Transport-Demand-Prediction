@@ -31,51 +31,50 @@ logger = get_logger(__name__)
 
 PARAM_GRIDS = {
     "XGBoost": {
-        "model": XGBRegressor(random_state=RANDOM_SEED, verbosity=0),
+        "model": XGBRegressor(random_state=RANDOM_SEED, verbosity=0, n_jobs=1),
         "params": {
-            "n_estimators":     [200, 300, 400, 500],
-            "max_depth":        [4, 5, 6, 7, 8],
-            "learning_rate":    [0.01, 0.03, 0.05, 0.1],
-            "subsample":        [0.7, 0.8, 0.9, 1.0],
-            "colsample_bytree": [0.6, 0.7, 0.8, 1.0],
-            "min_child_weight": [1, 3, 5, 7],
-            "gamma":            [0, 0.1, 0.2],
+            "n_estimators":     [100, 150, 200],
+            "max_depth":        [4, 5, 6],
+            "learning_rate":    [0.03, 0.05, 0.1],
+            "subsample":        [0.8, 0.9, 1.0],
+            "colsample_bytree": [0.7, 0.8, 1.0],
+            "min_child_weight": [1, 3],
         }
     },
     "LightGBM": {
-        "model": LGBMRegressor(random_state=RANDOM_SEED, verbose=-1),
+        "model": LGBMRegressor(random_state=RANDOM_SEED, verbose=-1, n_jobs=1),
         "params": {
-            "n_estimators":    [200, 300, 400, 500],
-            "learning_rate":   [0.01, 0.03, 0.05, 0.1],
-            "num_leaves":      [31, 63, 127],
-            "max_depth":       [-1, 6, 8, 10],
-            "subsample":       [0.7, 0.8, 0.9],
-            "colsample_bytree":[0.7, 0.8, 1.0],
-            "min_child_samples":[5, 10, 20],
+            "n_estimators":    [100, 150, 200],
+            "learning_rate":   [0.03, 0.05, 0.1],
+            "num_leaves":      [31, 63],
+            "max_depth":       [-1, 6],
+            "subsample":       [0.8, 1.0],
+            "colsample_bytree":[0.8, 1.0],
+            "min_child_samples":[10, 20],
         }
     },
     "CatBoost": {
-        "model": CatBoostRegressor(random_seed=RANDOM_SEED, verbose=0),
+        "model": CatBoostRegressor(random_seed=RANDOM_SEED, verbose=0, thread_count=1),
         "params": {
-            "iterations":   [200, 300, 400],
+            "iterations":   [100, 150, 200],
             "learning_rate":[0.03, 0.05, 0.1],
-            "depth":        [4, 5, 6, 7],
-            "l2_leaf_reg":  [1, 3, 5, 7],
+            "depth":        [4, 5, 6],
+            "l2_leaf_reg":  [1, 3],
         }
     },
     "Random Forest": {
-        "model": RandomForestRegressor(random_state=RANDOM_SEED, n_jobs=-1),
+        "model": RandomForestRegressor(random_state=RANDOM_SEED, n_jobs=1),
         "params": {
-            "n_estimators":    [100, 200, 300],
-            "max_depth":       [None, 10, 15, 20],
-            "min_samples_leaf":[1, 2, 5],
-            "max_features":    ["sqrt", "log2", 0.5],
+            "n_estimators":    [100, 150],
+            "max_depth":       [10, 15],
+            "min_samples_leaf":[2, 5],
+            "max_features":    ["sqrt", 0.5],
         }
     },
 }
 
 
-def tune_model(name: str, splits: dict, n_iter: int = 25) -> dict:
+def tune_model(name: str, splits: dict, n_iter: int = 5) -> dict:
     """Tune a single model using RandomizedSearchCV with TimeSeriesSplit."""
     X_train = splits["X_train"]
     y_train = splits["y_train"]
@@ -92,7 +91,7 @@ def tune_model(name: str, splits: dict, n_iter: int = 25) -> dict:
     cfg = PARAM_GRIDS[name]
 
     # TimeSeriesSplit for CV -- respects temporal ordering
-    tscv = TimeSeriesSplit(n_splits=5)
+    tscv = TimeSeriesSplit(n_splits=3)
 
     search = RandomizedSearchCV(
         estimator=cfg["model"],
@@ -102,7 +101,7 @@ def tune_model(name: str, splits: dict, n_iter: int = 25) -> dict:
         scoring="neg_mean_absolute_error",
         refit=True,
         random_state=RANDOM_SEED,
-        n_jobs=-1,
+        n_jobs=1,
         verbose=0,
     )
 

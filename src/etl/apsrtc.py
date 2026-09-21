@@ -27,6 +27,9 @@ logger = get_logger(__name__)
 _HERE       = Path(__file__).resolve().parent.parent.parent
 RAW_CSV     = _HERE / "data" / "raw" / "apsrtc" / "APSRTC_Transport_Data.csv"
 RAW_ZIP_SRC = _HERE.parent / "apsrtc.zip"
+DATASETS_CSV      = _HERE / "datasets" / "apstrc.csv"       # fallback: datasets/ folder
+DATASETS_CSV_ALT  = _HERE / "datasets" / "apsrtc.csv"
+DATASETS_CSV_ORIG = _HERE / "datasets" / "APSRTC_Transport_Data.csv"
 PROCESSED   = _HERE / "data" / "processed" / "apsrtc_clean.csv"
 FE_OUT      = _HERE / "data" / "processed" / "apsrtc_features.csv"
 
@@ -42,7 +45,11 @@ def load_raw() -> pd.DataFrame:
     if RAW_CSV.exists():
         logger.info("Loading APSRTC from: %s", RAW_CSV)
         return pd.read_csv(RAW_CSV, low_memory=False)
-    elif RAW_ZIP_SRC.exists():
+    for alt in [DATASETS_CSV, DATASETS_CSV_ALT, DATASETS_CSV_ORIG]:
+        if alt.exists():
+            logger.info("Loading APSRTC from datasets/ folder: %s", alt)
+            return pd.read_csv(alt, low_memory=False)
+    if RAW_ZIP_SRC.exists():
         logger.info("Extracting from zip: %s", RAW_ZIP_SRC)
         RAW_CSV.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(RAW_ZIP_SRC, "r") as z:

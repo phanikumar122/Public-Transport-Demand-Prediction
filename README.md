@@ -8,19 +8,19 @@
 
 ## Abstract
 
-This project builds an end-to-end transportation analytics and demand-prediction system. It integrates three real transportation datasets into a MySQL star-schema data warehouse, applies OLAP analytical operations, performs K-Means clustering and Isolation Forest anomaly detection, then trains and compares five regression models (Linear Regression, Random Forest, XGBoost, LightGBM, CatBoost) to predict bus passenger demand. The best-performing model is explained using SHAP, and all results are made available to Tableau for interactive dashboards.
+This project builds an end-to-end transportation analytics and demand-prediction system. It integrates three real transportation datasets into a MySQL star-schema data warehouse, applies OLAP analytical operations, performs K-Means clustering and Isolation Forest anomaly detection across all three transport modes, then trains and compares five regression models (Ridge, Random Forest, XGBoost, LightGBM, CatBoost) to predict passenger demand. The best-performing model is explained using SHAP.
 
 ---
 
 ## Problem Statement
 
 Public transport authorities need accurate demand forecasting to:
-- Deploy the right number of buses on each route
+- Deploy the right number of vehicles on each route
 - Reduce operational waste on low-demand routes
 - Proactively manage peak-hour congestion
 - Optimise revenue and fuel efficiency
 
-This project builds a reproducible ML pipeline to predict `passengers` per trip for APSRTC bus routes using historical operational data.
+This project builds a reproducible ML pipeline to predict `passengers` per trip across Bus, Rail, and Air transport using historical operational data.
 
 ---
 
@@ -28,26 +28,27 @@ This project builds a reproducible ML pipeline to predict `passengers` per trip 
 
 1. **Data Warehousing** — Build a MySQL star-schema warehouse integrating APSRTC, Railways, and Flights datasets
 2. **OLAP Analysis** — Implement roll-up, drill-down, slice, and dice operations
-3. **Data Mining** — K-Means route clustering and Isolation Forest anomaly detection
-4. **Machine Learning** — Train 5 regression models with time-aware split; select best model
+3. **Data Mining** — K-Means route clustering and Isolation Forest anomaly detection across all 3 modes
+4. **Machine Learning** — Train 5 regression models on combined ~24,366 rows with time-aware split
 5. **Explainable AI** — SHAP analysis to identify demand drivers
-6. **Prediction** — Reusable pipeline predicting passenger demand + recommended buses
-7. **Tableau** — 6 interactive dashboards for operational and analytical insights
+6. **Prediction** — Reusable pipeline predicting passenger demand + recommended vehicles
 
 ---
 
 ## Dataset Description
 
-### APSRTC (Primary ML dataset)
+Raw datasets are stored in the `datasets/` folder at the project root.
+
+### APSRTC — `datasets/apstrc.csv` (ML dataset — Bus)
 | Column | Type | Description |
 |--------|------|-------------|
 | bus_id | str | Unique bus identifier |
 | route | str | Origin-Destination route (15 routes) |
-| bus_type | str | Service type (Volvo AC, Sleeper, etc.) |
+| bus_type | str | Service type (Volvo AC, Sleeper, Semi-Sleeper, Super Luxury, Express, Ordinary) |
 | depot | str | Operating depot (7 locations) |
-| date | date | Trip date (2024 data, 348 unique dates) |
+| date | date | Trip date (2024-01-01 → 2024-12-30) |
 | capacity | int | Bus seat capacity |
-| **passengers** | **int** | **TARGET: Passenger count (55 unique values, 0–55)** |
+| **passengers** | **int** | **TARGET: Passenger count (55 unique values)** |
 | occupancy_rate | float | % seats filled |
 | distance_km | float | Route distance |
 | fare_per_passenger | float | Ticket fare |
@@ -56,10 +57,12 @@ This project builds a reproducible ML pipeline to predict `passengers` per trip 
 | month | str | Month name |
 | day_of_week | str | Day of week |
 
-**Rows**: 1,000 | **Missing values**: None | **Duplicates**: None
+**Rows**: 1,000 | **Missing values**: None | **Duplicates**: None  
+**Routes**: Kurnool-Hyderabad, Guntur-Hyderabad, Hyderabad-Vijayawada, Eluru-Hyderabad, Anantapur-Bangalore, Nellore-Chennai, Vijayawada-Visakhapatnam, Hyderabad-Tirupati, Hyderabad-Visakhapatnam, Kadapa-Hyderabad, Ongole-Hyderabad, Rajahmundry-Hyderabad, Vijayawada-Tirupati, Kakinada-Vijayawada, Chittoor-Bangalore  
+**Depots**: Hyderabad, Guntur, Nellore, Kurnool, Visakhapatnam, Tirupati, Vijayawada
 
-### Indian Railways (IRCTC)
-Schedule data for 8,366 trains — used for OLAP analytics only (no passenger demand column available).
+### Indian Railways (IRCTC) — `datasets/Irctc.csv` (ML dataset — Rail)
+8,366 train records used for OLAP analytics and ML demand prediction.
 
 | Column | Description |
 |--------|-------------|
@@ -71,26 +74,34 @@ Schedule data for 8,366 trains — used for OLAP analytics only (no passenger de
 | days_of_week | Operating days |
 | classes | Coach classes available |
 | intermediate_stops | All station stops |
+| **passengers** | **Seeded: demand based on train type + distance (min=42, max=760, avg=216)** |
 
-### Indian Domestic Flights (2019–2025)
-15,000 flight records used for multi-modal analytics and Tableau dashboards.
+**Rows**: 8,366 | **Missing values**: None | **Duplicates**: None  
+**Seeding logic**: Rajdhani (300–600) → Shatabdi (200–500) → Express (100–400) → Local/MEMU (50–250), scaled by route distance
+
+### Indian Domestic Flights — `datasets/flights.csv` (ML dataset — Air)
+15,000 flight records used for multi-modal analytics and ML demand prediction.
 
 | Column | Description |
 |--------|-------------|
 | airline | Carrier name |
-| date_of_journey | Flight date |
+| date_of_journey | Flight date (2019–2025) |
 | Source / destination | Airport cities |
 | dep_time / Arrival_time | Times |
 | Duration | Flight time |
 | Total_stops | Non-stop / 1 stop / 2+ |
 | Price | Ticket price (INR) |
+| **passengers** | **Seeded: demand based on airline capacity tier + stops load factor + price (min=11, max=291, avg=83)** |
+
+**Rows**: 15,000 | **Missing values**: None | **Duplicates**: None  
+**Seeding logic**: Airline fleet capacity tier (IndiGo/SpiceJet=160, regional=72) × load factor by stops (non-stop: 75–98%, 3 stops: 30–60%) × price adjustment
 
 ---
 
 ## System Architecture
 
 ```
-RAW DATA (3 datasets)
+RAW DATA (3 datasets in datasets/)
     ↓
 ETL & PREPROCESSING (Python + Pandas)
     ↓
@@ -100,11 +111,13 @@ MYSQL DATA WAREHOUSE (Star Schema)
        ↓              ↓              ↓
      OLAP         K-MEANS      ISOLATION FOREST
   (SQL Queries)  CLUSTERING      ANOMALY DETECTION
+  (all 3 modes)  (all 3 modes)   (all 3 modes)
        ↓              ↓              ↓
        └──────────────┴──────────────┘
                       ↓
               ML MODEL TRAINING
-      (Linear / RF / XGBoost / LightGBM / CatBoost)
+      (Ridge / RF / XGBoost / LightGBM / CatBoost)
+      (~24,366 rows: Bus + Rail + Air combined)
                       ↓
               HYPERPARAMETER TUNING
                       ↓
@@ -112,7 +125,7 @@ MYSQL DATA WAREHOUSE (Star Schema)
                       ↓
             DEMAND PREDICTION PIPELINE
                       ↓
-             TABLEAU DASHBOARDS (6)
+              OUTPUT CSVs + CHARTS
 ```
 
 ---
@@ -120,32 +133,65 @@ MYSQL DATA WAREHOUSE (Star Schema)
 ## Data Preprocessing
 
 ### APSRTC Pipeline (`src/etl/apsrtc.py`)
-1. Extract from ZIP → load CSV
-2. Normalise column names
-3. Drop duplicate rows
-4. Parse `date` → datetime
-5. Fill missing numerics with median
-6. Clip negative passengers to 0
-7. Winsorise outliers (IQR × 3)
-8. Normalise categorical strings (Title Case)
+Reads from: `data/raw/apsrtc/APSRTC_Transport_Data.csv`
+
+1. Normalise column names
+2. Drop duplicate rows
+3. Parse `date` → datetime
+4. Fill missing numerics with median
+5. Clip negative passengers to 0
+6. Winsorise outliers (IQR × 3)
+7. Normalise categorical strings (Title Case)
 
 ### Feature Engineering
 - **Temporal**: year, month_num, day_num, dow, is_weekend, quarter, week_of_year, is_holiday
 - **Lag features** (grouped by route): lag_1, lag_7, rolling_mean_7/14, rolling_max/min_7
-- **Operational**: seats_remaining, revenue_per_km, fuel_efficiency
+- **Historical means**: route_hist_mean, bustype_hist_mean, route_month_mean, route_bustype_mean
 - **Encoded**: route_encoded, bus_type_encoded, depot_encoded
 
 ### Flights Pipeline (`src/etl/flights.py`)
+Reads from: `data/raw/flights/flights.csv`
+
 - Parse `date_of_journey` as datetime
 - Parse `Duration` → `duration_minutes` (integer)
 - Parse `Total_stops` → `num_stops` (integer)
-- Cap price outliers
+- Cap price outliers (IQR × 3)
 
 ### Railways Pipeline (`src/etl/railways.py`)
+Reads from: `data/raw/railways/IRCTC_cleaned.csv`
+
 - Parse departure/arrival times to minutes
 - Derive `duration_minutes` (handles overnight journeys)
 - Extract class flags (has_1A, has_2A, has_SL, etc.)
 - Count intermediate stops
+
+---
+
+## Dataset Setup
+
+The ETL pipeline reads from `data/raw/`. Copy the datasets from `datasets/` into the expected locations before running the pipeline:
+
+```
+datasets/apstrc.csv  →  data/raw/apsrtc/APSRTC_Transport_Data.csv
+datasets/Irctc.csv   →  data/raw/railways/IRCTC_cleaned.csv
+datasets/flights.csv →  data/raw/flights/flights.csv
+```
+
+```bash
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force -Path data/raw/apsrtc, data/raw/railways, data/raw/flights
+Copy-Item datasets/apstrc.csv  data/raw/apsrtc/APSRTC_Transport_Data.csv
+Copy-Item datasets/Irctc.csv   data/raw/railways/IRCTC_cleaned.csv
+Copy-Item datasets/flights.csv data/raw/flights/flights.csv
+```
+
+```bash
+# Linux / macOS
+mkdir -p data/raw/apsrtc data/raw/railways data/raw/flights
+cp datasets/apstrc.csv  data/raw/apsrtc/APSRTC_Transport_Data.csv
+cp datasets/Irctc.csv   data/raw/railways/IRCTC_cleaned.csv
+cp datasets/flights.csv data/raw/flights/flights.csv
+```
 
 ---
 
@@ -185,14 +231,14 @@ dim_route ──────→ fact_transport ←── dim_transport_mode
 | Table | Rows (approx) | Description |
 |-------|--------------|-------------|
 | `dim_date` | 2,557 | Calendar dates 2019–2026 |
-| `dim_route` | ~150 | Distinct routes (Bus + Flights) |
+| `dim_route` | ~150 | Distinct routes (Bus + Flights + Rail) |
 | `dim_transport_mode` | ~50 | Bus subtypes + Airlines + Railway |
 | `dim_location` | ~100 | Depots + Airports + Stations |
-| `fact_transport` | ~24,000 | Central fact (APSRTC + Flights + Railways) |
-| `fact_predictions` | ~1,000 | ML demand predictions |
+| `fact_transport` | ~24,366 | Central fact (APSRTC + Flights + Railways) |
+| `fact_predictions` | ~24,366 | ML demand predictions |
 | `ml_model_metrics` | ~10 | Model evaluation results |
-| `mining_clusters` | ~15 | K-Means cluster assignments |
-| `mining_anomalies` | ~50 | Isolation Forest anomalies |
+| `mining_clusters` | ~150 | K-Means cluster assignments |
+| `mining_anomalies` | ~1,200 | Isolation Forest anomalies |
 
 ---
 
@@ -212,21 +258,28 @@ Implemented in `src/warehouse/queries.sql`:
 ## Data Mining
 
 ### K-Means Clustering (`src/mining/clustering.py`)
-- Features: avg_passengers, max_passengers, std_passengers, trip_count, avg_occupancy, avg_distance, avg_revenue
+- **Datasets**: APSRTC (Bus) + IRCTC (Rail) + Flights (Air) — all routes clustered together
+- Features: avg_passengers, max_passengers, std_passengers, trip_count, avg_occupancy, avg_distance_km, avg_fare
 - Method: StandardScaler → Elbow + Silhouette → optimal K selection
-- Output: route cluster assignments + cluster names (Low/Medium/High Demand)
+- Output: `outputs/predictions/route_clusters.csv`
 
 ### Isolation Forest (`src/mining/anomaly_detection.py`)
-- Features: passengers, occupancy_rate, distance_km, revenue, fare_per_passenger, fuel_consumed_liters
-- Contamination: 5% (tunable)
-- Output: anomaly flags + scores per trip record
+- **Datasets**: APSRTC (Bus) + IRCTC (Rail) + Flights (Air) — anomalies detected across all modes
+- Shared features: passengers, occupancy_rate, distance_km, fare_per_passenger
+- Contamination: 5% per mode
+- Output: `outputs/predictions/transport_anomalies.csv`
 
 ---
 
 ## Machine Learning
 
-### Problem
-**Regression**: Predict `passengers` (continuous integer) per APSRTC trip.
+### Combined Training Data
+| Dataset | Rows | Transport Mode |
+|---------|------|---------------|
+| APSRTC | 1,000 | Bus |
+| IRCTC | 8,366 | Rail |
+| Flights | 15,000 | Air |
+| **Total** | **~24,366** | **Multi-modal** |
 
 ### Split Strategy (Time-Aware)
 ```
@@ -234,14 +287,14 @@ Past ─────────────────────────
 
 TRAIN (70%)     |   VAL (15%)   |   TEST (15%)
 ──────────────────────────────────────────────
-2024-xx-xx → ... → ... → ... → last 15% dates
+~17,056 rows        ~3,655 rows     ~3,655 rows
 ```
 No shuffling. Future records never in training set.
 
 ### Models Compared
 | Model | Type |
 |-------|------|
-| Linear Regression | Baseline |
+| Ridge | Baseline |
 | Random Forest | Traditional Ensemble |
 | XGBoost | Gradient Boosting |
 | LightGBM | Gradient Boosting |
@@ -266,7 +319,7 @@ python run_pipeline.py --steps tune
 - **Method**: RandomizedSearchCV with TimeSeriesSplit (5 folds)
 - **Scoring**: Negative MAE
 - **Models tuned**: XGBoost, LightGBM, CatBoost
-- Tuned model overwrites `best_model.pkl` if it improves test R²
+- Tuned model overwrites `best_model.pkl` only if CV MAE improves
 
 ---
 
@@ -276,13 +329,13 @@ python run_pipeline.py --steps tune
 python run_pipeline.py --steps explain
 ```
 
-SHAP answers: *Which factors most influence bus passenger demand?*
+SHAP answers: *Which factors most influence passenger demand?*
 
 Outputs:
 - `reports/figures/shap_global_importance.png` — Top feature importances
 - `reports/figures/shap_summary_plot.png` — Beeswarm feature impact
 - `reports/figures/shap_waterfall_single.png` — Single prediction explanation
-- `outputs/metrics/shap_feature_importance.csv` — For Tableau
+- `outputs/metrics/shap_feature_importance.csv`
 
 ---
 
@@ -329,11 +382,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your MySQL credentials
 
-# 4. Place raw datasets (ZIPs auto-extracted)
-# ML\ folder should contain:
-#   apsrtc.zip
-#   irctc.zip
-#   domestic flights.zip
+# 4. Copy datasets to expected locations (see Dataset Setup section above)
 
 # 5. Run full pipeline
 python run_pipeline.py
@@ -357,23 +406,6 @@ python run_pipeline.py                       # All steps
 
 ---
 
-## Tableau Connection
-
-1. Open Tableau Desktop
-2. Connect → MySQL (`localhost:3306`, database `transport_dw`)
-3. Or connect to CSV files in `outputs/` for portable dashboards
-4. See `tableau/dashboard_documentation.md` for complete dashboard specs
-
-**6 Dashboards**:
-1. Executive Overview (KPIs)
-2. Demand Analysis (patterns by route/day/month)
-3. Route Clustering (K-Means results)
-4. Anomaly Detection (Isolation Forest results)
-5. ML Model Performance (comparison table)
-6. Demand Prediction (actual vs predicted)
-
----
-
 ## Running Tests
 
 ```bash
@@ -381,7 +413,7 @@ python tests/test_pipeline.py
 ```
 
 Tests verify:
-- Data loading
+- Data loading from all 3 datasets
 - Preprocessing (no null targets, no negatives)
 - Feature engineering columns present
 - No data leakage in time-aware split
@@ -392,7 +424,7 @@ Tests verify:
 
 ## Results
 
-> Run `python run_pipeline.py` to generate actual results.
+> Run `python run_pipeline.py` to generate actual results.  
 > Model metrics will be saved to `outputs/metrics/model_metrics.csv`.
 
 ---
@@ -400,10 +432,11 @@ Tests verify:
 ## Limitations
 
 1. **APSRTC dataset size**: 1,000 rows — sufficient for demonstration but small for production deep learning
-2. **No actual Railways demand**: IRCTC dataset contains schedules only, not passenger counts
-3. **No geospatial data**: Route coordinates unavailable — map-based Tableau charts not possible
-4. **Holiday calendar**: Approximate — uses fixed national holiday dates
-5. **Lag features**: With 1,000 rows and 15 routes, lag features have limited depth (~66 records per route)
+2. **Seeded passenger counts**: IRCTC and Flights `passengers` columns are derived from heuristics, not real surveys
+3. **IRCTC synthetic dates**: No actual trip dates in the schedule dataset — random dates assigned for time-aware split
+4. **No geospatial data**: Route coordinates unavailable — map-based charts not possible
+5. **Holiday calendar**: Approximate — uses 9 fixed Indian national holiday dates
+6. **Lag features**: ~66 records per APSRTC route — limited lag depth
 
 ---
 
@@ -413,8 +446,7 @@ Tests verify:
 2. Add weather data as a demand feature
 3. Deploy prediction API using FastAPI
 4. Extend to LSTM/Transformer-based temporal models
-5. Geospatial demand heatmaps with GPS coordinates
-6. Integrate all three datasets into a unified demand model
+5. Replace seeded passengers with real survey data for Rail and Air
 
 ---
 
@@ -422,10 +454,17 @@ Tests verify:
 
 ```
 public-transport-demand-prediction/
+├── datasets/
+│   ├── apstrc.csv               ← APSRTC raw data (1,000 rows)
+│   ├── Irctc.csv                ← Indian Railways (8,366 rows)
+│   └── flights.csv              ← Domestic flights (15,000 rows)
 ├── data/
-│   ├── raw/{apsrtc,railways,flights}/
+│   ├── raw/
+│   │   ├── apsrtc/APSRTC_Transport_Data.csv
+│   │   ├── railways/IRCTC_cleaned.csv
+│   │   └── flights/flights.csv
 │   └── processed/
-├── notebooks/           (EDA and analysis notebooks)
+├── notebooks/                   (EDA and analysis notebooks)
 ├── src/
 │   ├── config.py
 │   ├── etl/{apsrtc,railways,flights,pipeline}.py
@@ -435,19 +474,22 @@ public-transport-demand-prediction/
 │   └── utils/logger.py
 ├── models/
 │   ├── best_model.pkl
+│   ├── all_models.pkl
+│   ├── tuned_model.pkl
 │   └── model_metadata.json
 ├── outputs/
 │   ├── predictions/
 │   ├── metrics/
 │   └── figures/
 ├── reports/figures/
-├── tableau/dashboard_documentation.md
 ├── tests/test_pipeline.py
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
-├── README.md
-└── run_pipeline.py
+├── PRD.md
+├── Architecture.md
+├── Workflow.md
+└── README.md
 ```
 
 ---
@@ -455,12 +497,11 @@ public-transport-demand-prediction/
 ## Conclusion
 
 This project demonstrates a complete DMDW + ML pipeline:
-- **ETL** cleans and integrates 3 datasets totalling ~24,000 records
+- **ETL** cleans and integrates 3 datasets totalling ~24,366 records
 - **Star schema** warehouse enables multi-dimensional OLAP queries
-- **K-Means** reveals 3 demand tiers across 15 APSRTC routes
-- **Isolation Forest** flags ~5% anomalous trips for investigation
-- **Gradient boosting models** (XGBoost/LightGBM/CatBoost) outperform the baseline
-- **SHAP** confirms that historical demand, route, and occupancy rate are primary demand drivers
-- **Tableau** provides 6 interactive dashboards for operational decision-making
+- **K-Means** reveals demand tiers across Bus, Rail, and Air routes
+- **Isolation Forest** flags ~5% anomalous trips per transport mode
+- **Gradient boosting models** (XGBoost/LightGBM/CatBoost) trained on all 3 transport modes
+- **SHAP** identifies transport mode, capacity, and historical demand as primary demand drivers
 
-The system is fully reproducible: a single `python run_pipeline.py` command executes all phases from raw data to Tableau-ready outputs.
+The system is fully reproducible: a single `python run_pipeline.py` command executes all phases from raw data to final outputs.

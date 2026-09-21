@@ -4,6 +4,7 @@
     "capacity",
     "distance_km",
     "fare_per_passenger",
+    "transport_mode_encoded",
     "year",
     "month_num",
     "day_num",
@@ -20,23 +21,27 @@
     "rolling_min_7",
     "rolling_std_7",
     "route_hist_mean",
-    "bustype_hist_mean",
+    "modetype_hist_mean",
     "route_month_mean",
-    "route_bustype_mean",
+    "route_modetype_mean",
     "route_encoded",
-    "bus_type_encoded",
-    "depot_encoded"
+    "mode_type_encoded",
+    "operator_encoded"
   ],
-  "n_features": 25,
-  "training_date": "2026-08-29T11:00:16.685921",
-  "dataset": "APSRTC_Transport_Data.csv",
+  "n_features": 26,
+  "training_date": "2026-09-20T21:14:57.211813",
+  "datasets": [
+    "APSRTC (Bus)",
+    "IRCTC (Rail)",
+    "Indian Domestic Flights (Air)"
+  ],
   "target": "passengers",
   "split_strategy": "time-aware chronological (train=70%/val=15%/test=15%)",
   "metrics": {
-    "test_MAE": 7.9818,
-    "test_RMSE": 10.0588,
-    "test_MAPE": 28.1329,
-    "test_R2": 0.2407
+    "test_MAE": 30.9182,
+    "test_RMSE": 54.1542,
+    "test_MAPE": 37.9331,
+    "test_R2": 0.4775
   },
   "hyperparameters": {
     "iterations": 1000,

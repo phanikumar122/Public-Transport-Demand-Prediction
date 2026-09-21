@@ -2,7 +2,12 @@
 etl/flights.py -- Preprocessing pipeline for Indian Domestic Flights dataset.
 
 Actual columns: index, airline, date_of_journey, Source, destination, route,
-                dep_time, Arrival_time, Duration, Total_stops, Additional_info, Price
+                dep_time, Arrival_time, Duration, Total_stops, Additional_info,
+                Price, passengers (seeded based on airline capacity + stops load factor + price)
+
+NOTE: passengers column has been seeded with realistic values derived from
+airline fleet capacity tier, number of stops (load factor proxy), and ticket
+price. Used for ML demand prediction alongside APSRTC and IRCTC datasets.
 """
 
 import warnings
@@ -20,12 +25,16 @@ logger = get_logger(__name__)
 _HERE       = Path(__file__).resolve().parent.parent.parent
 RAW_ZIP     = _HERE / "data" / "raw" / "flights" / "flights.csv"
 RAW_ZIP_SRC = _HERE.parent / "domestic flights.zip"
+DATASETS_CSV = _HERE / "datasets" / "flights.csv"   # fallback: datasets/ folder
 PROCESSED   = _HERE / "data" / "processed" / "flights_clean.csv"
 
 
 def load_raw() -> pd.DataFrame:
     if RAW_ZIP.exists():
         return pd.read_csv(RAW_ZIP, low_memory=False)
+    elif DATASETS_CSV.exists():
+        logger.info("Loading flights from datasets/ folder: %s", DATASETS_CSV)
+        return pd.read_csv(DATASETS_CSV, low_memory=False)
     elif RAW_ZIP_SRC.exists():
         RAW_ZIP.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(RAW_ZIP_SRC, "r") as z:
@@ -111,6 +120,36 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     q1, q3 = df["price"].quantile(0.25), df["price"].quantile(0.75)
     iqr = q3 - q1
     df["price"] = df["price"].clip(q1 - 3 * iqr, q3 + 3 * iqr)
+
+    # ── Passengers column ─────────────────────────────────────────────────────
+    if "passengers" in df.columns:
+        df["passengers"] = pd.to_numeric(df["passengers"], errors="coerce")
+        n_miss = df["passengers"].isna().sum()
+        if n_miss:
+            df["passengers"] = df["passengers"].fillna(df["passengers"].median())
+            logger.info("Filled %d missing passenger values with median", n_miss)
+        df["passengers"] = df["passengers"].clip(lower=0).astype(int)
+        logger.info("passengers: min=%d  max=%d  mean=%.1f",
+                    df["passengers"].min(), df["passengers"].max(), df["passengers"].mean())
+    else:
+        logger.warning("No 'passengers' column found in flights data.")
+
+    # ── Airline tier encoding (for ML) ────────────────────────────────────────
+    # Tier 1 = full-service (Air India, Vistara), Tier 2 = LCC (IndiGo, SpiceJet),
+    # Tier 3 = regional (TruJet, Star Air, Alliance Air)
+    AIRLINE_TIER = {
+        "Air India": 1, "Vistara": 1,
+        "Indigo": 2, "Spicejet": 2, "Goair": 2, "Akasa Air": 2, "Airasia India": 2,
+        "Alliance Air": 3, "Trujet": 3, "Star Air": 3,
+    }
+    if "airline" in df.columns:
+        df["airline_tier"] = df["airline"].str.title().map(AIRLINE_TIER).fillna(2).astype(int)
+        df["airline_encoded"] = df["airline"].astype("category").cat.codes
+
+    # ── Route-level features ──────────────────────────────────────────────────
+    if "source" in df.columns and "destination" in df.columns:
+        df["route_pair"] = df["source"].str.title() + "-" + df["destination"].str.title()
+        df["route_encoded"] = df["route_pair"].astype("category").cat.codes
 
     logger.info("Flights preprocessing complete. Shape: %d x %d", *df.shape)
     return df
