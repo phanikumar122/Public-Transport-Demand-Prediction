@@ -546,12 +546,13 @@ def get_anomalies(mode: Optional[str] = None, limit: int = Query(default=200, le
         ]
 
     return AnomaliesResponse(
-        total_anomalies=len(records) if not _DF_ANOMALIES else len(_DF_ANOMALIES),
+        total_anomalies=len(_DF_ANOMALIES) if (_DF_ANOMALIES is not None and len(_DF_ANOMALIES) > 0) else len(records),
         anomaly_rate_pct=5.0,
         breakdown_by_mode={str(k): int(v) for k, v in mode_bk.items()},
         top_routes=top_routes,
         recent_anomalies=records,
     )
+
 
 
 # ─── 8. SHAP Explainability ──────────────────────────────────────────────────
