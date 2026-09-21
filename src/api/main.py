@@ -135,7 +135,17 @@ def startup_event():
     load_assets()
 
 
-# ─── 1. Health & Status ──────────────────────────────────────────────────────
+# ─── 0. Root & Health Checks ──────────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "service": "Public Transport Demand Prediction API",
+        "docs_url": "/docs",
+        "health_url": "/api/health",
+    }
+
 
 @app.get("/api/health", response_model=HealthResponse)
 def health_check():
